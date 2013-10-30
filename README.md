@@ -1,4 +1,19 @@
-issues-to-cards
-===============
+# issues-to-cards
 
-A polling service to synchronise from github issues to trello cards (including comments and moving of cards to specific lists when issues are closed)
+FIXME
+
+## Prerequisites
+
+You will need [Leiningen][1] 1.7.0 or above installed.
+
+[1]: https://github.com/technomancy/leiningen
+
+## Running
+
+To start a web server for the application, run:
+
+    lein ring server
+
+## License
+
+Copyright © 2013 FIXME
