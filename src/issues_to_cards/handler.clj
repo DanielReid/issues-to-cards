@@ -29,8 +29,6 @@
 (def card-url (str trello-base-url "cards" ))
 (def key-and-token (str "?key=" trello-key "&token=" trello-token))
 
-
-
 (defroutes app-routes
   (context "/" []
            (defroutes root-routes
@@ -49,9 +47,26 @@
       (middleware/wrap-json-body)
       (middleware/wrap-json-response)))
 
-
+; TODO delete (debug)
 (defn print-mapentries [header-string key entries]
     (doall (map #(println (str header-string (get %1 key))) entries)))
+(defn- println* [str]
+  (println str)
+  str)
+; END
+
+(defn github-issue-id [github-info-map]
+  ; example "danielreid/issues-to-cards#1"
+  (str 
+   (:owner github-info-map) "/" (:repo-name github-info-map) "#" (:issue-number github-info-map)))
+
+(defn github-info-from-url [url]
+  (def elements (clojure.string/split url #"/"))
+  ; example (assumes html url, not api)
+  ; ["https:" "" "github.com" "drugis" "mcda-elicitation-web" "issues" "32"]
+  {:owner (elements 3) 
+   :repo-name (elements 4)
+   :issue-number (elements 6)})
 
 (defn get-github-issues [] 
   (def issues (client/get (str github-base-url mcda-repo-issues)))
@@ -65,25 +80,6 @@
                        "&token=" trello-token))
   (decode (:body (client/get trello-url))))
 
-(defn print-issues []
-  (def issues (get-github-issues))
-  (def trello-url (str trello-base-url
-                       "boards/" addis-board-id
-                       "/cards"
-                       "?key=" trello-key
-                       "&token=" trello-token))
-  (def trello (client/get trello-url))
-  (print-mapentries "trello-entry: " "name" (decode (:body trello)))
-  (def bodies (decode (:body issues)))
-  (println (str "bodies" bodies))
-  (map #(println "test") bodies)
-  (print-mapentries "github entry: " "title" bodies))
-
-(defn- println* [str]
-  (println str)
-  str)
-
-
 (defn github-label-to-trello [github-label]
   (get {"bug" "red"
    "story" "orange"} github-label))
@@ -94,29 +90,18 @@
 )
 
 (defn create-card [issue list-id]
-  (println (str "create card " (get issue "title")))
-  ; store created card id
-  (def card-id 
-    (get (decode (:body 
-                  (client/post (str card-url key-and-token)
-                               {:body
-                                (encode 
-                                 {:name (get issue "title")
-                                  :desc (get issue "body")
-                                  :due nil 
-                                  :labels (github-labels-to-trello (get issue "labels"))
-                                  :idList list-id})
-                                :content-type :json} 
-                               {:throw-entire-message? true})))
-         "id"))
- (println (str "post successful; adding comment to card " card-id " with url "
-                (get issue "html_url")))
-  ; add comment with url to github issue
-  (println (client/post (str card-url "/" card-id "/actions/comments" key-and-token)
+  (def name (github-issue-id (github-info-from-url (get issue "html_url"))))
+  (def desc (str "[" name "](" (get issue "html_url") ")\n"
+                 (get issue "body")))
+  (client/post (str card-url key-and-token)
                {:body
-                (encode {:text (get issue "html_url")})
+                (encode 
+                 {:name name
+                  :desc desc
+                  :due nil 
+                  :labels (github-labels-to-trello (get issue "labels"))
+                  :idList list-id})
                 :content-type :json}))
-  (println "done creating."))
 
 (defn check-and-create-new-cards [github-issues trello-cards]
   (def issues-without-cards (filter 
