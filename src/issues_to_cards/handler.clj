@@ -86,42 +86,79 @@
 
 (defn github-labels-to-trello [labels]
   (def label-names (map #(get %1 "name") labels))
-  (remove nil? (map github-label-to-trello label-names))
-)
+  (remove nil? (map github-label-to-trello label-names)))
+
+(defn github-id-from-issue [issue]
+  (github-issue-id (github-info-from-url (get issue "html_url"))))
 
 (defn create-card [issue list-id]
-  (def name (github-issue-id (github-info-from-url (get issue "html_url"))))
-  (def desc (str "[" name "](" (get issue "html_url") ")\n"
+  (def name (str "[" 
+                 (second (clojure.string/split (github-id-from-issue issue) #"/")) 
+                 "] " (get issue "title")))
+  (def desc (str "[" (github-id-from-issue issue) "](" (get issue "html_url") ")\n"
                  (get issue "body")))
-  (client/post (str card-url key-and-token)
-               {:body
-                (encode 
-                 {:name name
-                  :desc desc
-                  :due nil 
-                  :labels (github-labels-to-trello (get issue "labels"))
-                  :idList list-id})
-                :content-type :json}))
+  ; return created card
+  (decode (:body
+           (client/post 
+            (str card-url key-and-token)
+            {:body
+             (encode 
+              {:name name
+               :desc desc
+               :due nil 
+               :labels (github-labels-to-trello (get issue "labels"))
+               :idList list-id})
+             :content-type :json}))))
 
-(defn check-and-create-new-cards [github-issues trello-cards]
-  (def issues-without-cards (filter 
-                             (fn [github-entry] 
-                               (not (some 
-                                (fn [trello-entry] 
-                                  (if (= (get trello-entry "name")
-                                         (get github-entry "title"))
-                                    trello-entry))
-                                trello-cards)))
-                             github-issues))
+(defn create-new-cards [github-issues trello-cards]
+  (def issues-without-cards 
+    (filter 
+     (fn [github-entry] 
+       (not (some 
+             (fn [trello-entry] 
+               (if (.contains
+                    (get trello-entry "name")
+                    (second (clojure.string/split (github-id-from-issue github-entry) #"/")))
+                 trello-entry nil))
+             trello-cards)))
+     github-issues))
+  (def created-cards [])
   (doseq [issue issues-without-cards]
-    (create-card issue addis-dev-todo-list))
+    (conj created-cards (create-card issue addis-dev-todo-list)))
+  created-cards
+)
+
+(defn update-card-list [issue card]
+  ; if issue is closed then cardlist -> addis-dev-done-list
+  ; if issue is open and assigned then cardlist -> addis-dev-doing-list
+  (def new-list 
+    (if (= (get issue "state") "closed")
+      addis-dev-done-list
+      (if (= (get issue "assignee") nil)
+        nil
+        addis-dev-doing-list)))
+  (def changed? (not (= new-list (get card "idList"))))
+  (if changed? 
+    (assoc issue "idList new-list")
+    issue))
+
+(defn associate-issues-with-cards [issues cards]
+  ; todo
+)
+
+(defn move-cards [github-issues trello-cards]
+  ; todo
 )
 
 (defn poll []
   (println "polling...")
   (def github-issues (get-github-issues))
+  (println (str "github issues retrieved: " (count github-issues)))
   (def trello-cards (get-trello-cards))
-  (check-and-create-new-cards github-issues trello-cards)
+  (println (str "trello cards retrieved: " (count trello-cards)))
+  (def created-cards (create-new-cards github-issues trello-cards))
+  (def associated (associate-issues-with-cards github-issues (conj trello-cards created-cards)))
+  (move-cards github-issues trello-cards)
   (println "done polling.")
 )
 
