@@ -91,12 +91,16 @@
 (defn github-id-from-issue [issue]
   (github-issue-id (github-info-from-url (get issue "html_url"))))
 
+(defn short-github-id-from-issue [issue]
+  (second (clojure.string/split (github-id-from-issue issue) #"/")))
+
 (defn create-card [issue list-id]
   (def name (str "[" 
-                 (second (clojure.string/split (github-id-from-issue issue) #"/")) 
+                 (short-github-id-from-issue issue)
                  "] " (get issue "title")))
   (def desc (str "[" (github-id-from-issue issue) "](" (get issue "html_url") ")\n"
                  (get issue "body")))
+  (println (str "creating " name))
   ; return created card
   (decode (:body
            (client/post 
@@ -110,16 +114,23 @@
                :idList list-id})
              :content-type :json}))))
 
-(defn create-new-cards [github-issues trello-cards]
+(defn create-new-cards 
+  "Make a new trello card for each github issue for which there is not yet
+  one. Checks for a card with name that conains the github id (without owner)."
+  [github-issues trello-cards]
+  (println "creating cards")
   (def issues-without-cards 
     (filter 
      (fn [github-entry] 
+       (println (github-id-from-issue github-entry))
        (not (some 
              (fn [trello-entry] 
-               (if (.contains
+               (if 
+                   (.contains
                     (get trello-entry "name")
-                    (second (clojure.string/split (github-id-from-issue github-entry) #"/")))
-                 trello-entry nil))
+                    (short-github-id-from-issue github-entry))
+                 trello-entry 
+                 nil))
              trello-cards)))
      github-issues))
   (def created-cards [])
@@ -142,9 +153,19 @@
     (assoc issue "idList new-list")
     issue))
 
-(defn associate-issues-with-cards [issues cards]
-  ; todo
-)
+(defn associate-issues-with-cards 
+  "Create map where issues are keys to their corresponding cards"
+  [issues cards]
+  (reduce (fn [set issue]
+            (assoc 
+             set
+             issue
+             (some #(if (.contains 
+                         (get %1 "name")
+                         (short-github-id-from-issue issue))
+                      %1))))
+          {}
+          issues))
 
 (defn move-cards [github-issues trello-cards]
   ; todo
@@ -157,7 +178,9 @@
   (def trello-cards (get-trello-cards))
   (println (str "trello cards retrieved: " (count trello-cards)))
   (def created-cards (create-new-cards github-issues trello-cards))
+  (println (str (count created-cards) " cards created."))
   (def associated (associate-issues-with-cards github-issues (conj trello-cards created-cards)))
+  (println associated)
   (move-cards github-issues trello-cards)
   (println "done polling.")
 )
