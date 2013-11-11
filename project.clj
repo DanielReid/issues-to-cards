@@ -10,7 +10,8 @@
                  [com.h2database/h2 "1.3.168"]
                  [clj-http "0.7.7"]
                  [cheshire "5.2.0"]
-                 [overtone/at-at "1.2.0"]]
+                 [overtone/at-at "1.2.0"]
+                 [environ "0.4.0"]]
   :plugins [[lein-ring "0.8.7"]]
   :ring {:handler issues-to-cards.handler/app
          :init issues-to-cards.handler/init}
