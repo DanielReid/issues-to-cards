@@ -99,6 +99,14 @@
 (defn short-github-id-from-issue [issue]
   (second (clojure.string/split (github-id-from-issue issue) #"/")))
 
+(defn trello-card-body [name desc issue list-id]
+   (encode 
+    {:name name
+     :desc desc
+     :due nil 
+     :labels (github-labels-to-trello (get issue "labels"))
+     :idList list-id}))
+
 (defn create-card [issue list-id]
   (let 
       [name (str "[" 
@@ -111,13 +119,7 @@
            (decode (:body                       
                     (client/post 
                      (str card-url key-and-token)
-                     {:body
-                      (encode 
-                       {:name name
-                        :desc desc
-                        :due nil 
-                        :labels (github-labels-to-trello (get issue "labels"))
-                        :idList list-id})
+                     {:body (trello-card-body name desc issue list-id)
                       :content-type :json}))))))
 
 (defn create-new-cards 
@@ -131,16 +133,18 @@
 
 (defn update-card-list [issue card]     ; if issue is closed then cardlist -> addis-dev-done-list
                                         ; if issue is open and assigned then cardlist -> addis-dev-doing-list
-  (let [new-list 
+  (let [new-list-id
         (if (= (get issue "state") "closed")
           addis-dev-done-list
           (if (= (get issue "assignee") nil)
             nil
             addis-dev-doing-list))
-        changed? (not (= new-list (get card "idList")))]
-    (if changed? 
-      (assoc issue "idList new-list")
-      issue)))
+        changed? (not (= new-list-id (get card "idList")))]
+    {:changed changed?
+     :issue (if changed? 
+              (assoc issue "idList new-list")
+              issue)
+     :card card}))
 
 (defn find-card-matching-issue [issue cards]
   (some 
@@ -156,8 +160,18 @@
   (doseq [issue issues]
     (swap! issue-card-map assoc issue (find-card-matching-issue issue cards))))
 
-(defn move-cards [github-issues trello-cards]
-                                        ; todo
+(defn move-cards []
+  (let 
+      [updated-cards-and-issues (map #(update-card-list (key %1) (val %1)) @issue-card-map)
+       changed (filter #((:changed %1)) updated-cards-and-issues) ]
+    (doseq [entry changed]
+      (swap! issue-card-map assoc (:issue entry) (:issue card))
+      (client/post 
+       (str card-url "/" (get (:card entry) "id") key-and-token)
+       {:body (assoc (trello-card-body name desc issue list-id))   ; TODO fix argumends
+        :content-type :json}))))
+      
+       
   )
 
 (defn poll []
