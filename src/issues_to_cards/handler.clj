@@ -25,27 +25,31 @@
 (def addis-dev-doing-list "5270ca8844d20c90510038c2")
 (def addis-dev-done-list "5270ca8844d20c90510038c3")
 
+; Global issue/card map until I figure something better out. Better than remaking it.
+(def issue-card-map (atom {}))
+
                                         ; TODO: delete crud ?
 (def card-url (str trello-base-url "cards" ))
 (def key-and-token (str "?key=" trello-key "&token=" trello-token))
 
-(defroutes app-routes
-  (context "/" []
-           (defroutes root-routes
-             (GET "/" [] (fn [a] "Hello World"))
-             (POST "/" {body :body} (fn [a] (println a)))
-             (context "/:id" [id] 
-                      (defroutes id-routes
-                        (GET "/" [] (fn [id] id))))))
-  (context "/test" []
-           (defroutes test-routes
-             (GET "/" [] (fn [a] "HELLO OTHER WORLD"))))
-  (route/not-found "Not Found"))
+; Deprecated until webhooks use
+; (defroutes app-routes
+;  (context "/" []
+;           (defroutes root-routes
+;             (GET "/" [] (fn [a] "Hello World"))
+;             (POST "/" {body :body} (fn [a] (println a)))
+;             (context "/:id" [id] 
+;                      (defroutes id-routes
+;                        (GET "/" [] (fn [id] id))))))
+;  (context "/test" []
+;           (defroutes test-routes
+;             (GET "/" [] (fn [a] "HELLO OTHER WORLD"))))
+;  (route/not-found "Not Found"))
 
-(def app
-  (-> (handler/api app-routes)
-      (middleware/wrap-json-body)
-      (middleware/wrap-json-response)))
+;(def app
+;  (-> (handler/api app-routes)
+;      (middleware/wrap-json-body)
+;      (middleware/wrap-json-response)))
 
                                         ; TODO delete (debug)
 (defn print-mapentries [header-string key entries]
@@ -103,17 +107,18 @@
        desc (str "[" (github-id-from-issue issue) "](" (get issue "html_url") ")\n"
                  (get issue "body"))]
     (println (str "creating " name))
-    (decode (:body                         ; return created card
-             (client/post 
-              (str card-url key-and-token)
-              {:body
-               (encode 
-                {:name name
-                 :desc desc
-                 :due nil 
-                 :labels (github-labels-to-trello (get issue "labels"))
-                 :idList list-id})
-               :content-type :json})))))
+    (swap! issue-card-map assoc issue ; update issue/card map with created card
+           (decode (:body                       
+                    (client/post 
+                     (str card-url key-and-token)
+                     {:body
+                      (encode 
+                       {:name name
+                        :desc desc
+                        :due nil 
+                        :labels (github-labels-to-trello (get issue "labels"))
+                        :idList list-id})
+                      :content-type :json}))))))
 
 (defn create-new-cards 
   "Make a new trello card for each github issue for which there is not yet
@@ -137,20 +142,19 @@
       (assoc issue "idList new-list")
       issue)))
 
+(defn find-card-matching-issue [issue cards]
+  (some 
+   #(if (.contains 
+              (get %1 "name")
+              (short-github-id-from-issue issue))
+      %1)
+   cards))
+
 (defn associate-issues-with-cards 
   "Create map where issues are keys to their corresponding cards"
   [issues cards]
-  (println (str "associating " (count cards) " cards with ") (count issues) " issues.")
-  (reduce (fn [set issue]
-            (assoc set issue
-                   (some 
-                    #(if (.contains 
-                          (get %1 "name")
-                          (short-github-id-from-issue issue))
-                       %1)
-                    cards)))
-          {}
-          issues))
+  (doseq [issue issues]
+    (swap! issue-card-map assoc issue (find-card-matching-issue issue cards))))
 
 (defn move-cards [github-issues trello-cards]
                                         ; todo
@@ -162,17 +166,17 @@
       [
        github-issues (get-github-issues)
        trello-cards (get-trello-cards)
-       associated (associate-issues-with-cards github-issues trello-cards)
-       created-cards (create-new-cards associated)]
-    (doseq [mapentry associated] 
-      (prn (str (get (key mapentry) "title") " : "
-                (get (val mapentry) "name"))))
+       created-cards (create-new-cards)]
     (move-cards github-issues trello-cards))
   (println "done polling."))
 
 (defn init []
-  (println "-------sync initialised------")
-  )
+  (let [github-issues (get-github-issues)
+        trello-cards (get-trello-cards)]
+    (associate-issues-with-cards github-issues trello-cards)
+    (doseq [mapentry @issue-card-map] 
+      (prn (str (get (key mapentry) "title") " : "
+                (get (val mapentry) "name"))))))
 
 (def my-pool (atat/mk-pool))
 (atat/every 30000 poll my-pool)
