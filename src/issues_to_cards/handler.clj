@@ -28,7 +28,7 @@
 ; Global issue/card map until I figure something better out. Better than remaking it.
 (def issue-card-map (atom {}))
 
-                                        ; TODO: delete crud ?
+; TODO: delete crud ?
 (def card-url (str trello-base-url "cards" ))
 (def key-and-token (str "?key=" trello-key "&token=" trello-token))
 
@@ -51,7 +51,7 @@
       (middleware/wrap-json-body)
       (middleware/wrap-json-response)))
 
-                                        ; TODO delete (debug)
+; TODO delete (debug)
 (defn print-mapentries [header-string key entries]
   (doall (map #(println (str header-string (get %1 key))) entries)))
 (defn- println* [str]  (println str) str)
@@ -134,15 +134,16 @@
      (println (str "created " (count created-cards) " cards."))
      created-cards))
 
-(defn update-card-list [issue card]     ; if issue is closed then cardlist -> addis-dev-done-list
-                                        ; if issue is open and assigned then cardlist -> addis-dev-doing-list
-  (println "updating card list")
+(defn update-card-list [issue card]     
+  ; if issue is closed then cardlist -> addis-dev-done-list
+  ; if issue is open and assigned then cardlist -> addis-dev-doing-list
   (let [new-list-id
         (if (= (get issue "state") "closed")
           addis-dev-done-list
           (if (get issue "assignee")
-            addis-dev-doing-list))
-        changed? (println* (not (or (nil? new-list-id) (= new-list-id (get card "idList")))))
+            addis-dev-doing-list
+            addis-dev-todo-list))
+        changed? (not (or (nil? new-list-id) (= new-list-id (get card "idList"))))
         change-map (hash-map :changed changed?
                     :card (if changed? 
                             (assoc card "idList" new-list-id)
@@ -168,15 +169,16 @@
 (defn move-cards []
   (println "moving cards.")
   (let 
-      [updated-cards-and-issues (map #(update-card-list (key %1) (val %1)) @issue-card-map)
-       changed (filter #((:changed %1)) updated-cards-and-issues) ]
+      [updated-cards-and-issues (doall (map #(update-card-list (key %1) (val %1)) @issue-card-map))
+       changed (filter #(:changed %1) updated-cards-and-issues) ]
     (println (str "moving " (count changed) " cards."))
     (doseq [entry changed]
       (swap! issue-card-map assoc (:issue entry) (:card entry))
       (client/put 
-        (str 
-          card-url "/" (get (:card entry) "id") "/idList" key-and-token)
-          "&value=" (get (:card entry) "idList")))))
+       (str card-url "/" (get (:card entry) "id") "/idList" key-and-token)
+       {:body (encode 
+               {:value (get (:card entry) "idList")})
+        :content-type :json}))))
 
 (defn poll []
   (println "polling...")
@@ -197,4 +199,4 @@
     (println "init finished.")))
 
 (def my-pool (atat/mk-pool))
-(atat/every 30000 poll my-pool :initial-delay 30000)
+(atat/every 30000 poll my-pool :initial-delay 10000)

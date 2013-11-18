@@ -12,7 +12,8 @@
                  [cheshire "5.2.0"]
                  [overtone/at-at "1.2.0"]
                  [environ "0.4.0"]]
-  :plugins [[lein-ring "0.8.7"]]
+  :plugins [[lein-ring "0.8.7"]
+            [lein-environ "0.4.0"]]
   :ring {:handler issues-to-cards.handler/app
          :init issues-to-cards.handler/init}
   :profiles
