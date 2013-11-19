@@ -9,37 +9,48 @@
             [overtone.at-at :as atat]
             [clj-http.client :as client]
             [cheshire.core :refer :all]
-            [clojure.pprint :refer :all]))
+            [clojure.pprint :refer :all]
+            [environ.core :refer :all]))
 
-                                        ; string constants for access
-(def trello-base-url "https://api.trello.com/1/")
+; environment variables/string constants
+; github
 (def github-base-url "https://api.github.com/repos/")
-(def mcda-repo-issues "drugis/mcda-elicitation-web/issues")
+(def repo-issues (env :repo-issues))
+(def github-token (env :github-token))
 
-(def trello-key "d75612b792255bae907b8d2bf4db0de6")
-(def trello-token "fb1d07abe5006c37de3ff16bce7e0caf2c19233198e961493bb6f4247372c364")
-(def github-token "4057ff29fcdfa7c6d3b4b7f0a4ed4c829a8607b4")
-(def addis-dev-board-id "1h6bSddJ")
-(def addis-board-id "tfTOMeXe")
+; trello
+(def trello-base-url "https://api.trello.com/1/")
+(def trello-board-id (env :trello-board-id))
+(def trello-key (env :trello-key))
+(def trello-token (env :trello-token))
+(def todo-list (env :todo-list))
+(def doing-list (env :doing-list))
+(def done-list (env :done-list))
 
-(def addis-dev-todo-list "5270ca8844d20c90510038c1")
-(def addis-dev-doing-list "5270ca8844d20c90510038c2")
-(def addis-dev-done-list "5270ca8844d20c90510038c3")
+; connection between labels on github/trello
+(def label-map (env :label-map))
+
+; at-at polling
+(def polling-interval (env :polling-interval))
+(def initial-poll-delay (env :initial-poll-delay))
+
+; metaconfig (output verbosity)
+(def verbose (env :verbose))
 
 ; Global issue/card map until I figure something better out. Better than remaking it.
 (def issue-card-map (atom {}))
 
-; TODO: delete crud ?
+; readability defs
 (def card-url (str trello-base-url "cards" ))
 (def key-and-token (str "?key=" trello-key "&token=" trello-token))
 (def all-trello-cards-from-board-url
   (str trello-base-url
-       "boards/" addis-dev-board-id
+       "boards/" trello-board-id
        "/cards"
        key-and-token))
 (def archived-trello-cards-from-board-url
   (str trello-base-url
-       "boards/" addis-dev-board-id
+       "boards/" trello-board-id
        "/cards/closed"
        key-and-token))
 
@@ -77,9 +88,9 @@
    :issue-number (elements 6)})
 
 (defn get-github-issues [state]
-  (let [issues (client/get (str github-base-url mcda-repo-issues "?state=" state)
+  (let [issues (client/get (str github-base-url repo-issues "?state=" state)
                            {:oauth-token github-token})]
-    (println (str state " github issues retrieved."))
+    (if verbose (println (str state " github issues retrieved.")))
     (decode (:body issues))))
 
 (defn get-open-github-issues [] 
@@ -89,17 +100,15 @@
   (get-github-issues "closed"))
 
 (defn get-trello-cards [] 
-  (println "trello cards retrieved.")
+  (if verbose (println "open trello cards retrieved."))
   (decode (:body (client/get all-trello-cards-from-board-url))))
 
 (defn get-archived-trello-cards []
-    (decode (:body (client/get archived-trello-cards-from-board-url))))
+   (if verbose (println "archived trello cards retrieved."))
+  (decode (:body (client/get archived-trello-cards-from-board-url))))
 
 (defn github-label-to-trello [github-label]
-  (let [label-map 
-        {"bug" "red"
-         "story" "orange"}]
-    (get label-map github-label)))
+  get label-map github-label)
 
 (defn github-labels-to-trello [labels]
   (let [label-names (map #(get %1 "name") labels)]
@@ -133,51 +142,50 @@
                  "] " (get issue "title"))
        desc (str "[" (github-id-from-issue issue) "](" (get issue "html_url") ")\n"
                 (truncate-description (get issue "body")))]
-    (println (str "creating " name))
+    (if verbose (println (str "creating " name)))
     (swap! issue-card-map assoc issue ; update issue/card map with created card
            (decode (:body                       
                     (client/post 
                      (str card-url key-and-token)
                      {:body (trello-card-body name desc issue list-id)
-                      :content-type :json
-                      :retry-handler (fn [ex try-count http-context]
-                                                    (println "Got:" ex)
-                                                    (if (> try-count 4) false true))}))))))
+                      :content-type :json}))))))
 
 (defn create-new-cards 
   "Make a new trello card for each github issue for which there is not yet
   one. Checks for a card with name that conains the github id (without owner)."
   []
-  (println "creating cards")
+  (if verbose (println "creating cards"))
   (let 
       [issues-without-cards (remove #(get @issue-card-map %1) (keys @issue-card-map))
-       created-cards (map #(create-card %1 addis-dev-todo-list) issues-without-cards)]
+       created-cards (map #(create-card %1 todo-list) issues-without-cards)]
      (println (str "created " (count created-cards) " cards."))
      created-cards))
 
 (defn update-card-list [issue card]     
   ; if issue is closed then cardlist -> addis-dev-done-list
-  ; if issue is open and assigned then cardlist -> addis-dev-doing-list
+  ; if issue is open and assigned then cardlist -> doing-list
+  ; nb: if issue is dragged to 'doing' on trello do not place back in todo.
   (let [new-list-id 
-        (if (= (get  issue "state") "closed")
-                           addis-dev-done-list
-                           (if (get issue "assignee")
-                             addis-dev-doing-list
-                             addis-dev-todo-list))
-        changed? (not (= new-list-id (get card "idList")))
+        (if (= (get issue "state") "closed")
+          done-list
+          (if (get issue "assignee")
+            doing-list))
+        changed? (and
+                  (not (nil? new-list-id))
+                  (not (= new-list-id (get card "idList"))))
         change-map (hash-map :changed changed?
-                    :card (if changed? 
-                            (assoc card "idList" new-list-id)
-                            card)
-                    :issue issue)]
+                             :card (if changed? 
+                                     (assoc card "idList" new-list-id)
+                                     card)
+                             :issue issue)]
     change-map))
         
 
 (defn find-card-matching-issue [issue cards]
   (some 
    #(if (.contains 
-              (get %1 "name")
-              (str "[" (short-github-id-from-issue issue) "]"))
+         (get %1 "name")
+         (str "[" (short-github-id-from-issue issue) "]"))
       %1)
    cards))
 
@@ -188,11 +196,11 @@
     (swap! issue-card-map assoc issue (find-card-matching-issue issue cards))))
 
 (defn move-cards []
-  (println "moving cards.")
+  (if verbose (println "moving cards."))
   (let 
-      [updated-cards-and-issues (doall (map #(update-card-list (key %1) (val %1)) @issue-card-map))
+      [updated-cards-and-issues (map #(update-card-list (key %1) (val %1)) @issue-card-map)
        changed (filter #(:changed %1) updated-cards-and-issues) ]
-    (println (str "moving " (count changed) " cards."))
+    (if verbose (println (str "moving " (count changed) " cards.")))
     (doseq [entry changed]
       (swap! issue-card-map assoc (:issue entry) (:card entry))
       (client/put 
@@ -201,31 +209,28 @@
                {:value (get (:card entry) "idList")})
         :content-type :json}))))
 
-(defn update-comments []
-  (doseq [issue (keys )]))
-
 (defn poll []
-  (println "polling...")
+  (if verbose (println "polling..."))
   (let 
       [open-github-issues (get-open-github-issues)
        closed-github-issues (get-closed-github-issues)
-       trello-cards (get-trello-cards)
+       open-trello-cards (get-trello-cards)
+       archived-trello-cards (get-archived-trello-cards)
        created-cards (create-new-cards)]
+    (associate-issues-with-cards (concat closed-github-issues open-github-issues) 
+                                 (concat created-cards archived-trello-cards open-trello-cards))
     (move-cards)
-    (update-comments)
-    (println "done polling.")))
+    (if verbose (println "done polling."))))
 
 (defn init []
-  (let [open-github-issues (get-open-github-issues)
-        closed-github-issues (get-closed-github-issues)
-        trello-cards (get-trello-cards)
-        archived-trello-cards (get-archived-trello-cards)]
+  (let 
+      [open-github-issues (get-open-github-issues)
+       closed-github-issues (get-closed-github-issues)
+       open-trello-cards (get-trello-cards)
+       archived-trello-cards (get-archived-trello-cards)]
     (associate-issues-with-cards (concat closed-github-issues open-github-issues) 
-                                 (concat archived-trello-cards trello-cards))
-    (doseq [mapentry @issue-card-map] 
-      (prn (str (get (key mapentry) "title") " : "
-                (get (val mapentry) "name"))))
-    (println "init finished.")))
+                                 (concat archived-trello-cards open-trello-cards))
+    (if verbose (println "init finished."))))
 
 (def my-pool (atat/mk-pool))
-(atat/every 60000 poll my-pool :initial-delay 10000)
+(atat/every polling-interval poll my-pool :initial-delay initial-poll-delay)

@@ -29,7 +29,8 @@ Items that need to be configured:
 * the ids of the to-do, doing and done lists on your Trello board
 * a security token from github
 
-Example configuration, in ~/.lein/profiles.clj:
+Example configuration, in `~/.lein/profiles.clj`:
+```
         {:user 
          {:env 
            {:github-token "<yourtoken>"
@@ -39,8 +40,14 @@ Example configuration, in ~/.lein/profiles.clj:
             :trello-board-id "<yourboardid>"
             :todo-list  "<yourlistid1>"
             :doing-list "<yourlistid2>"
-            :done-list  "<yourlistid3>"}}}
-
+            :done-list  "<yourlistid3>"
+            :verbose true
+            :polling-interval 60000
+            :initial-poll-delay 10000
+            :label-map  
+              {"bug" "red"
+               "story" "orange"}}}}
+```
 ### Trello configuration
 
 First, generate your developer key [here](https://trello.com/1/appKey/generate).
@@ -64,4 +71,4 @@ To start a web server for the application, run:
 
 ## License
 
-Copyright © 2013 FIXME
+Please feel free to use, modify, fork, etc. I would appreciate any and all feedback and improvements.
