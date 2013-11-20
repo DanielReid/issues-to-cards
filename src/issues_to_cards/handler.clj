@@ -103,10 +103,11 @@
     :idList list-id}))
 
 (defn truncate-description [desc]
-  (if ; Trello max length for description is 16384
-      (> 16084 (.length desc))
-    desc
-    (str "**NB : too-long description truncated**\n" (subs desc 0 16084))))
+  (if (>= (.length desc) 16084)  ; Trello max length for description is 16384
+    (do
+      (log/warn "**NB : too-long description truncated**\n")
+      (subs desc 0 16084))
+    desc))
 
 (defn create-card [issue list-id]
   (let
