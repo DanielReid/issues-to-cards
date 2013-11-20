@@ -1,13 +1,8 @@
 (ns issues-to-cards.handler
-  (:import com.mchange.v2.c3p0.ComboPooledDataSource)
-  (:require [compojure.handler :as handler]
-            [compojure.core :refer :all]
-            [ring.middleware.json :as middleware]
-            [clojure.java.jdbc :as sql]
-            [ring.util.response :refer :all]
-            [compojure.route :as route]
-            [overtone.at-at :as atat]
+  (:gen-class)
+  (:require [overtone.at-at :as atat]
             [clj-http.client :as client]
+            [clojure.tools.logging :as log]
             [cheshire.core :refer :all]
             [clojure.pprint :refer :all]
             [environ.core :refer :all]))
@@ -203,7 +198,7 @@
     (move-cards)
     (if verbose (println "done polling."))))
 
-(defn init []
+(defn -main [& args]
   (let
       [open-github-issues (get-open-github-issues)
        closed-github-issues (get-closed-github-issues)
