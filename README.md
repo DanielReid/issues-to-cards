@@ -65,9 +65,9 @@ Go [here](https://github.com/settings/applications) and create a new token for i
 
 ## Running
 
-To start a web server for the application, run:
+To start the application, run:
 
-    lein ring server
+    lein run
 
 ## License
 
