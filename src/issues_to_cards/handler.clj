@@ -29,9 +29,6 @@
 (def polling-interval (env :polling-interval))
 (def initial-poll-delay (env :initial-poll-delay))
 
-; metaconfig (output verbosity)
-(def verbose (env :verbose))
-
 ; Global issue/card map until I figure something better out. Better than remaking it.
 (def issue-card-map (atom {}))
 
@@ -66,7 +63,7 @@
 (defn get-github-issues [state]
   (let [issues (client/get (str github-base-url repo-issues "?state=" state)
                            {:oauth-token github-token})]
-    (if verbose (println (str state " github issues retrieved.")))
+    (log/debug state "github issues retrieved.")
     (decode (:body issues))))
 
 (defn get-open-github-issues []
@@ -76,11 +73,11 @@
   (get-github-issues "closed"))
 
 (defn get-trello-cards []
-  (if verbose (println "open trello cards retrieved."))
+  (log/debug "open trello cards retrieved.")
   (decode (:body (client/get all-trello-cards-from-board-url))))
 
 (defn get-archived-trello-cards []
-   (if verbose (println "archived trello cards retrieved."))
+   (log/debug "archived trello cards retrieved.")
   (decode (:body (client/get archived-trello-cards-from-board-url))))
 
 (defn github-label-to-trello [github-label]
@@ -118,7 +115,7 @@
                  "] " (get issue "title"))
        desc (str "[" (github-id-from-issue issue) "](" (get issue "html_url") ")\n"
                 (truncate-description (get issue "body")))]
-    (if verbose (println (str "creating " name)))
+    (log/debug "creating" name)
     (swap! issue-card-map assoc issue ; update issue/card map with created card
            (decode (:body
                     (client/post
@@ -130,7 +127,7 @@
   "Make a new trello card for each github issue for which there is not yet
   one. Checks for a card with name that conains the github id (without owner)."
   []
-  (if verbose (println "creating cards"))
+  (log/debug "creating cards")
   (let
       [issues-without-cards (remove #(get @issue-card-map %1) (keys @issue-card-map))
        created-cards (map #(create-card %1 todo-list) issues-without-cards)]
@@ -172,11 +169,11 @@
     (swap! issue-card-map assoc issue (find-card-matching-issue issue cards))))
 
 (defn move-cards []
-  (if verbose (println "moving cards."))
+  (log/debug "moving cards")
   (let
       [updated-cards-and-issues (map #(update-card-list (key %1) (val %1)) @issue-card-map)
        changed (filter #(:changed %1) updated-cards-and-issues) ]
-    (if verbose (println (str "moving " (count changed) " cards.")))
+    (log/debug "moving" (count changed) "cards.")
     (doseq [entry changed]
       (swap! issue-card-map assoc (:issue entry) (:card entry))
       (client/put
@@ -186,7 +183,7 @@
         :content-type :json}))))
 
 (defn poll []
-  (if verbose (println "polling..."))
+  (log/debug "polling...")
   (let
       [open-github-issues (get-open-github-issues)
        closed-github-issues (get-closed-github-issues)
@@ -196,7 +193,7 @@
     (associate-issues-with-cards (concat closed-github-issues open-github-issues)
                                  (concat created-cards archived-trello-cards open-trello-cards))
     (move-cards)
-    (if verbose (println "done polling."))))
+    (log/debug "done polling")))
 
 (defn -main [& args]
   (let
@@ -206,7 +203,7 @@
        archived-trello-cards (get-archived-trello-cards)]
     (associate-issues-with-cards (concat closed-github-issues open-github-issues)
                                  (concat archived-trello-cards open-trello-cards))
-    (if verbose (println "init finished."))
+    (log/debug "init finished.")
     (while (not (.. Thread currentThread isInterrupted))
       (Thread/sleep 100))))
 
