@@ -7,13 +7,13 @@
             [clojure.pprint :refer :all]
             [environ.core :refer :all]))
 
-; environment variables/string constants
-; github
+;; environment variables/string constants
+;; github
 (def github-base-url "https://api.github.com/repos/")
 (def repo-issues (env :repo-issues))
 (def github-token (env :github-token))
 
-; trello
+;; trello
 (def trello-base-url "https://api.trello.com/1/")
 (def trello-board-id (env :trello-board-id))
 (def trello-key (env :trello-key))
@@ -22,17 +22,17 @@
 (def doing-list (env :doing-list))
 (def done-list (env :done-list))
 
-; connection between labels on github/trello
+;; connection between labels on github/trello
 (def label-map (env :label-map))
 
-; at-at polling
+;; at-at polling
 (def polling-interval (env :polling-interval))
 (def initial-poll-delay (env :initial-poll-delay))
 
-; Global issue/card map until I figure something better out. Better than remaking it.
+;; Global issue/card map until I figure something better out. Better than remaking it.
 (def issue-card-map (atom {}))
 
-; readability defs
+;; readability defs
 (def card-url (str trello-base-url "cards" ))
 (def key-and-token (str "?key=" trello-key "&token=" trello-token))
 (def all-trello-cards-from-board-url
@@ -40,6 +40,7 @@
        "boards/" trello-board-id
        "/cards"
        key-and-token))
+
 (def archived-trello-cards-from-board-url
   (str trello-base-url
        "boards/" trello-board-id
@@ -77,7 +78,7 @@
   (decode (:body (client/get all-trello-cards-from-board-url))))
 
 (defn get-archived-trello-cards []
-   (log/debug "archived trello cards retrieved.")
+  (log/debug "archived trello cards retrieved.")
   (decode (:body (client/get archived-trello-cards-from-board-url))))
 
 (defn github-label-to-trello [github-label]
@@ -94,17 +95,16 @@
   (second (clojure.string/split (github-id-from-issue issue) #"/")))
 
 (defn trello-card-body [name desc issue list-id]
-   (encode
-    {:name name
-     :desc desc
-     :due nil
-     :labels (github-labels-to-trello (get issue "labels"))
-     :idList list-id}))
+  (encode
+   {:name name
+    :desc desc
+    :due nil
+    :labels (github-labels-to-trello (get issue "labels"))
+    :idList list-id}))
 
 (defn truncate-description [desc]
-  ; Trello max length for description is 16384
-  (if
-    (> 16084 (.length desc))
+  (if ; Trello max length for description is 16384
+      (> 16084 (.length desc))
     desc
     (str "**NB : too-long description truncated**\n" (subs desc 0 16084))))
 
@@ -114,7 +114,7 @@
                  (short-github-id-from-issue issue)
                  "] " (get issue "title"))
        desc (str "[" (github-id-from-issue issue) "](" (get issue "html_url") ")\n"
-                (truncate-description (get issue "body")))]
+                 (truncate-description (get issue "body")))]
     (log/debug "creating" name)
     (swap! issue-card-map assoc issue ; update issue/card map with created card
            (decode (:body
@@ -131,13 +131,13 @@
   (let
       [issues-without-cards (remove #(get @issue-card-map %1) (keys @issue-card-map))
        created-cards (map #(create-card %1 todo-list) issues-without-cards)]
-     (println (str "created " (count created-cards) " cards."))
-     created-cards))
+    (println (str "created " (count created-cards) " cards."))
+    created-cards))
 
 (defn update-card-list [issue card]
-  ; if issue is closed then cardlist -> addis-dev-done-list
-  ; if issue is open and assigned then cardlist -> doing-list
-  ; nb: if issue is dragged to 'doing' on trello do not place back in todo.
+  "if issue is closed then cardlist -> addis-dev-done-list ; if issue
+   is open and assigned then cardlist -> doing-list ; nb: if issue is
+   dragged to 'doing' on trello do not place back in todo."
   (let [new-list-id
         (if (= (get issue "state") "closed")
           done-list
@@ -195,6 +195,10 @@
     (move-cards)
     (log/debug "done polling")))
 
+
+(def my-pool (atat/mk-pool))
+(atat/every polling-interval poll my-pool :initial-delay initial-poll-delay)
+
 (defn -main [& args]
   (let
       [open-github-issues (get-open-github-issues)
@@ -206,6 +210,3 @@
     (log/debug "init finished.")
     (while (not (.. Thread currentThread isInterrupted))
       (Thread/sleep 100))))
-
-(def my-pool (atat/mk-pool))
-(atat/every polling-interval poll my-pool :initial-delay initial-poll-delay)
