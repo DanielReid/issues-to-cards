@@ -73,7 +73,7 @@
 (defn get-closed-github-issues []
   (get-github-issues "closed"))
 
-(defn get-trello-cards []
+(defn get-open-trello-cards []
   (log/debug "open trello cards retrieved.")
   (decode (:body (client/get all-trello-cards-from-board-url))))
 
@@ -131,7 +131,7 @@
   (let
       [issues-without-cards (remove #(get @issue-card-map %1) (keys @issue-card-map))
        created-cards (map #(create-card %1 todo-list) issues-without-cards)]
-    (println (str "created " (count created-cards) " cards."))
+    (log/debug (str "created " (count created-cards) " cards."))
     created-cards))
 
 (defn update-card-list [issue card]
@@ -187,7 +187,7 @@
   (let
       [open-github-issues (get-open-github-issues)
        closed-github-issues (get-closed-github-issues)
-       open-trello-cards (get-trello-cards)
+       open-trello-cards (get-open-trello-cards)
        archived-trello-cards (get-archived-trello-cards)
        created-cards (create-new-cards)]
     (associate-issues-with-cards (concat closed-github-issues open-github-issues)
@@ -203,7 +203,7 @@
   (let
       [open-github-issues (get-open-github-issues)
        closed-github-issues (get-closed-github-issues)
-       open-trello-cards (get-trello-cards)
+       open-trello-cards (get-open-trello-cards)
        archived-trello-cards (get-archived-trello-cards)]
     (associate-issues-with-cards (concat closed-github-issues open-github-issues)
                                  (concat archived-trello-cards open-trello-cards))
