@@ -41,7 +41,6 @@ Example configuration, in `~/.lein/profiles.clj`:
             :todo-list  "<yourlistid1>"
             :doing-list "<yourlistid2>"
             :done-list  "<yourlistid3>"
-            :verbose true
             :polling-interval 60000
             :initial-poll-delay 10000
             :label-map  
